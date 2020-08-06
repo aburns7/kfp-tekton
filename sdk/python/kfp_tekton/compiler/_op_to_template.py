@@ -101,7 +101,8 @@ def _get_resourceOp_template(op: BaseOp,
                     "type": "string"
                 },
                 {
-                    # Todo: The image need to be replaced, once there are official images from tekton
+                    # This image is hosted by the kfp-tekton maintainers.
+                    # Source code: https://github.com/kubeflow/kfp-tekton/tree/master/tekton-catalog/kubectl-wrapper
                     "default": "index.docker.io/aipipeline/kubeclient:v0.0.2",
                     "description": "Kubectl wrapper image",
                     "name": "image",
@@ -136,14 +137,16 @@ def _get_resourceOp_template(op: BaseOp,
     # Inject Argo variable replacement as env variables.
     if argo_var:
         template['spec']['steps'][0]['env'] = [
-            {'name': 'PIPELINERUN', 'valueFrom': {'fieldRef': {'fieldPath': "metadata.labels['tekton.dev/pipelineRun']"}}}
+            {'name': 'PIPELINERUN', 'valueFrom': {'fieldRef': {
+                'fieldPath': "metadata.labels['tekton.dev/pipelineRun']"}}}
         ]
 
     # Add results if exist.
     if op.attribute_outputs.items():
         template['spec']['results'] = []
         for output_item in sorted(list(op.attribute_outputs.items()), key=lambda x: x[0]):
-            template['spec']['results'].append({'name': output_item[0], 'description': output_item[1]})
+            template['spec']['results'].append(
+                {'name': output_item[0], 'description': output_item[1]})
 
     return template
 
@@ -157,7 +160,8 @@ def _add_mount_path(name: str,
     """
     Add emptyDir to the given mount_path for persisting files within the same tasks
     """
-    volume_mount_step_template.append({'name': sanitize_k8s_name(name), 'mountPath': path.rsplit("/", 1)[0]})
+    volume_mount_step_template.append(
+        {'name': sanitize_k8s_name(name), 'mountPath': path.rsplit("/", 1)[0]})
     volume_template.append({'name': sanitize_k8s_name(name), 'emptyDir': {}})
     mounted_param_paths.append(mount_path)
 
@@ -248,12 +252,15 @@ def _process_parameters(processed_op: BaseOp,
                     s['args'] = args
             # If file output path cannot be found/replaced, use emptyDir to copy it to the tekton/results path
             if need_copy_step:
-                copy_results_step['script'] = copy_results_step['script'] + 'cp ' + path + ' $(results.%s.path);' % name + '\n'
+                copy_results_step['script'] = copy_results_step['script'] + \
+                    'cp ' + path + ' $(results.%s.path);' % name + '\n'
                 mount_path = path.rsplit("/", 1)[0]
                 if mount_path not in mounted_param_paths:
-                    _add_mount_path(name, path, mount_path, volume_mount_step_template, volume_template, mounted_param_paths)
+                    _add_mount_path(name, path, mount_path, volume_mount_step_template,
+                                    volume_template, mounted_param_paths)
             # Record what artifacts are moved to result parameters.
-            parameter_name = sanitize_k8s_name(processed_op.name + '-' + name, allow_capital_underscore=True)
+            parameter_name = sanitize_k8s_name(
+                processed_op.name + '-' + name, allow_capital_underscore=True)
             replaced_param_list.append(parameter_name)
             artifact_to_result_mapping[parameter_name] = name
         return copy_results_step
@@ -297,8 +304,10 @@ def _process_output_artifacts(outputs_dict: Dict[Text, Any],
         # We want to use the insecure flag to figure out whether to use http or https scheme
         endpoint = re.sub(r"https?://", "", endpoint)
         endpoint = 'http://' + endpoint if insecure else 'https://' + endpoint
-        access_key = storage_location.get("accessKeySecret", {"name": "mlpipeline-minio-artifact", "key": "accesskey"})
-        secret_access_key = storage_location.get("secretKeySecret", {"name": "mlpipeline-minio-artifact", "key": "secretkey"})
+        access_key = storage_location.get(
+            "accessKeySecret", {"name": "mlpipeline-minio-artifact", "key": "accesskey"})
+        secret_access_key = storage_location.get(
+            "secretKeySecret", {"name": "mlpipeline-minio-artifact", "key": "secretkey"})
         bucket = storage_location.get("bucket", "mlpipeline")
         copy_artifacts_step = {
             'image': 'minio/mc',
@@ -308,10 +317,13 @@ def _process_output_artifacts(outputs_dict: Dict[Text, Any],
                         mc config host add storage %s $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY
                         ''' % (endpoint)),
             'env': [
-                {'name': 'PIPELINERUN', 'valueFrom': {'fieldRef': {'fieldPath': "metadata.labels['tekton.dev/pipelineRun']"}}},
-                {'name': 'PIPELINETASK', 'valueFrom': {'fieldRef': {'fieldPath': "metadata.labels['tekton.dev/pipelineTask']"}}},
+                {'name': 'PIPELINERUN', 'valueFrom': {'fieldRef': {
+                    'fieldPath': "metadata.labels['tekton.dev/pipelineRun']"}}},
+                {'name': 'PIPELINETASK', 'valueFrom': {'fieldRef': {
+                    'fieldPath': "metadata.labels['tekton.dev/pipelineTask']"}}},
                 {'name': 'NAMESPACE', 'valueFrom': {'fieldRef': {'fieldPath': "metadata.namespace"}}},
-                {'name': 'AWS_ACCESS_KEY_ID', 'valueFrom': {'secretKeyRef': {'name': access_key['name'], 'key': access_key['key']}}},
+                {'name': 'AWS_ACCESS_KEY_ID', 'valueFrom': {'secretKeyRef': {
+                    'name': access_key['name'], 'key': access_key['key']}}},
                 {'name': 'AWS_SECRET_ACCESS_KEY', 'valueFrom': {'secretKeyRef': {'name': secret_access_key['name'],
                                                                                  'key': secret_access_key['key']}}}
             ]
@@ -323,16 +335,18 @@ def _process_output_artifacts(outputs_dict: Dict[Text, Any],
                 copy_artifacts_step['script'] = copy_artifacts_step['script'] + \
                     'tar -cvzf %s.tgz $(results.%s.path)\n' % (artifact_name, sanitize_k8s_name(artifact_name)) + \
                     'mc cp %s.tgz storage/%s/artifacts/$PIPELINERUN/$PIPELINETASK/%s.tgz\n' % (artifact_name,
-                                                                                     bucket, artifact_name)
+                                                                                               bucket, artifact_name)
             else:
                 copy_artifacts_step['script'] = copy_artifacts_step['script'] + \
                     'tar -cvzf %s.tgz %s\n' % (artifact_name, artifact['path']) + \
-                    'mc cp %s.tgz storage/%s/artifacts/$PIPELINERUN/$PIPELINETASK/%s.tgz\n' % (artifact_name, bucket, artifact_name)
+                    'mc cp %s.tgz storage/%s/artifacts/$PIPELINERUN/$PIPELINETASK/%s.tgz\n' % (
+                        artifact_name, bucket, artifact_name)
                 if artifact['path'].rsplit("/", 1)[0] not in mounted_artifact_paths:
                     volume_mount_step_template.append({
                         'name': sanitize_k8s_name(artifact['name']), 'mountPath': artifact['path'].rsplit("/", 1)[0]
                     })
-                    volume_template.append({'name': sanitize_k8s_name(artifact['name']), 'emptyDir': {}})
+                    volume_template.append(
+                        {'name': sanitize_k8s_name(artifact['name']), 'emptyDir': {}})
                     mounted_artifact_paths.append(artifact['path'].rsplit("/", 1)[0])
         return copy_artifacts_step
     else:
@@ -433,7 +447,8 @@ def _op_to_template(op: BaseOp, pipelinerun_output_artifacts={}, enable_artifact
         output_artifacts = []
 
         # Flatten manifest because it needs to replace Argo variables
-        manifest = yaml.dump(convert_k8s_obj_to_json(processed_op.k8s_resource), default_flow_style=False)
+        manifest = yaml.dump(convert_k8s_obj_to_json(
+            processed_op.k8s_resource), default_flow_style=False)
         argo_var = False
         if manifest.find('{{workflow.name}}') != -1:
             # Kubernetes Pod arguments only take $() as environment variables
@@ -443,15 +458,19 @@ def _op_to_template(op: BaseOp, pipelinerun_output_artifacts={}, enable_artifact
             argo_var = True
 
         # task template
-        template = _get_resourceOp_template(op, processed_op.name, tekton_api_version, manifest, argo_var=argo_var)
+        template = _get_resourceOp_template(
+            op, processed_op.name, tekton_api_version, manifest, argo_var=argo_var)
 
     # initContainers
     if processed_op.init_containers:
-        template['spec']['steps'] = _prepend_steps(processed_op.init_containers, template['spec']['steps'])
+        template['spec']['steps'] = _prepend_steps(
+            processed_op.init_containers, template['spec']['steps'])
 
     # inputs
-    input_artifact_paths = processed_op.input_artifact_paths if isinstance(processed_op, dsl.ContainerOp) else None
-    artifact_arguments = processed_op.artifact_arguments if isinstance(processed_op, dsl.ContainerOp) else None
+    input_artifact_paths = processed_op.input_artifact_paths if isinstance(
+        processed_op, dsl.ContainerOp) else None
+    artifact_arguments = processed_op.artifact_arguments if isinstance(
+        processed_op, dsl.ContainerOp) else None
     inputs = _inputs_to_json(processed_op.inputs, input_artifact_paths, artifact_arguments)
     if 'parameters' in inputs:
         if isinstance(processed_op, dsl.ContainerOp):
@@ -497,14 +516,14 @@ def _op_to_template(op: BaseOp, pipelinerun_output_artifacts={}, enable_artifact
             template['metadata']['annotations'] = {
                 sanitize_k8s_name(key, allow_capital_underscore=True, allow_dot=True,
                                   allow_slash=True, max_length=253):
-                    value
+                value
                 for key, value in processed_op.pod_annotations.items()
             }
         if processed_op.pod_labels:
             template['metadata']['labels'] = {
                 sanitize_k8s_name(key, allow_capital_underscore=True, allow_dot=True,
                                   allow_slash=True, max_length=253):
-                    sanitize_k8s_name(value, allow_capital_underscore=True, allow_dot=True)
+                sanitize_k8s_name(value, allow_capital_underscore=True, allow_dot=True)
                 for key, value in processed_op.pod_labels.items()
             }
 
